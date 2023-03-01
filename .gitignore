@@ -3,3 +3,11 @@
 ################################################################################
 
 /DogOfTheWeek/.vs
+/DogOfTheWeek/DogOfTheWeek.API/obj
+/DogOfTheWeek/DogOfTheWeek.API/bin/Debug/net6.0
+/DogOfTheWeek/DogOfTheWeek.Application/obj
+/DogOfTheWeek/DogOfTheWeek.Application/bin/Debug/net6.0
+/DogOfTheWeek/DogOfTheWeek.Domain/obj
+/DogOfTheWeek/DogOfTheWeek.Domain/bin/Debug/net6.0
+/DogOfTheWeek/DogOfTheWeek.Infrastructure/obj
+/DogOfTheWeek/DogOfTheWeek.Infrastructure/bin/Debug/net6.0
