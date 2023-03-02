@@ -5,13 +5,13 @@ using DogOfTheWeek.Application.Handlers.DogBreed.Commands.DeleteDogBreed;
 using DogOfTheWeek.Application.Handlers.DogBreed.Commands.UpdateDogBreed;
 using DogOfTheWeek.Application.Handlers.DogBreed.Models;
 using DogOfTheWeek.Application.Handlers.DogBreed.Queries.GetAllDogBreeds;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace DogOfTheWeek.API.Controllers;
 
 [Route("api/[controller]")]
 [ApiController]
-//[Authorize]
 public class DogBreedController : ApiControllerBase
 {
     [HttpGet("GetAll")]
@@ -31,7 +31,9 @@ public class DogBreedController : ApiControllerBase
             return new JsonResult(new Response<StatusCodeResult>(new StatusCodeResult(500), $"{ex.Message}"));
         }
     }
+
     [HttpPost]
+    [Authorize(Roles = "Administrator")]
     public async Task<ActionResult<int>> Create(CreateDogBreedCommand command)
     {
         try
@@ -50,6 +52,7 @@ public class DogBreedController : ApiControllerBase
     }
 
     [HttpPut("{id}")]
+    [Authorize(Roles = "Administrator")]
     public async Task<ActionResult> Update(int id, UpdateDogBreedCommand command)
     {
         try
@@ -74,6 +77,7 @@ public class DogBreedController : ApiControllerBase
     }
 
     [HttpDelete("{id}")]
+    [Authorize(Roles = "Administrator")]
     public async Task<ActionResult> Delete(int id)
     {
         try
