@@ -9,6 +9,7 @@ public static class ConfigureServices
     public static IServiceCollection AddWebAPIServices(this IServiceCollection services)
     {
         services.AddSingleton<ICurrentUserService, CurrentUserService>();
+        services.AddScoped<JwtHandler>();
         services.AddDatabaseDeveloperPageExceptionFilter();
         services.AddHttpContextAccessor();
         // Customise default API behaviour

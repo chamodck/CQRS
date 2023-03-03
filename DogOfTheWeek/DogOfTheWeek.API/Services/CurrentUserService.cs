@@ -21,8 +21,11 @@ public class CurrentUserService : ICurrentUserService
             var httpContext = _httpContextAccessor.HttpContext;
             if (httpContext != null)
             {
-                var email = httpContext.User.FindFirst(ClaimTypes.Email).Value;
-                return email;
+                var claim = httpContext.User.FindFirst(ClaimTypes.Email);
+                if (claim != null)
+                    return claim.Value;
+                else
+                    return null;
             }
             else
             {

@@ -1,4 +1,5 @@
-﻿using DogOfTheWeek.Application.Common.Interfaces;
+﻿using DogOfTheWeek.API.Services;
+using DogOfTheWeek.Application.Common.Interfaces;
 using DogOfTheWeek.Application.Common.Models;
 using DogOfTheWeek.Application.Handlers.Identity.Models.IdentityDtos;
 using DogOfTheWeek.Domain.Entities.ApplicationUserAggregate;
@@ -34,9 +35,10 @@ public class AuthController : ControllerBase
     private readonly IMediator _mediator;
     private readonly AppData _appData;
     private readonly IEmailHelper _emailHelper;
+    private readonly JwtHandler _jwtHandler;
     public AuthController(ILogger<AuthController> logger, IMediator mediator, UserManager<ApplicationUser> userManager
         , RoleManager<IdentityRole> roleManager, IConfiguration configuration, IOptions<AppData> options
-        , IEmailHelper emailHelper)
+        , IEmailHelper emailHelper, JwtHandler jwtHandler)
     {
         this.userManager = userManager;
         this.roleManager = roleManager;
@@ -45,10 +47,11 @@ public class AuthController : ControllerBase
         this._mediator = mediator;
         this._appData = options.Value;
         this._emailHelper = emailHelper;
+        this._jwtHandler = jwtHandler;
     }
 
     [HttpPost]
-    [Route("login")]
+    [Route("Login")]
     public async Task<IActionResult> Login([FromBody] LoginDto model)
     {
         var user = await userManager.FindByEmailAsync(model.Email);
@@ -58,40 +61,17 @@ public class AuthController : ControllerBase
             if (!emailStatus)
                 return new JsonResult(new Response<StatusCodeResult>(new StatusCodeResult(500), "Email is unconfirmed,Check your mail & confirm it first."));
 
-            var userRoles = await userManager.GetRolesAsync(user);
-
-            var authClaims = new List<Claim>
-                {
-                    new Claim(ClaimTypes.Email, user.Email),
-                    new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
-                };
-
-            foreach (var userRole in userRoles)
+            return Ok(new AuthResponseDto
             {
-                authClaims.Add(new Claim(ClaimTypes.Role, userRole));
-            }
-
-            var authSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_configuration["JWT:Secret"]));
-
-            var token = new JwtSecurityToken(
-                issuer: _configuration["JWT:ValidIssuer"],
-                audience: _configuration["JWT:ValidAudience"],
-                expires: DateTime.Now.AddHours(3),
-                claims: authClaims,
-                signingCredentials: new SigningCredentials(authSigningKey, SecurityAlgorithms.HmacSha256)
-                );
-
-            return Ok(new
-            {
-                token = new JwtSecurityTokenHandler().WriteToken(token),
-                expiration = token.ValidTo
+                Token = await _jwtHandler.GenerateToken(user)
             });
+            
         }
         return new JsonResult(new Response<StatusCodeResult>(new StatusCodeResult(401), "Email and Password does not match"));
     }
 
     [HttpPost]
-    [Route("register")]
+    [Route("Register")]
     public async Task<IActionResult> Register([FromBody] RegisterDto model)
     {
         try
@@ -164,21 +144,30 @@ public class AuthController : ControllerBase
     {
         var user = await userManager.FindByEmailAsync(model.Email);
         if (user == null)
-            return new JsonResult(new Response<StatusCodeResult>(new StatusCodeResult(500), "User not found"));
+            return new JsonResult(new Response<StatusCodeResult>(new StatusCodeResult(500), "User does not exists."));
 
-        var token = await userManager.GeneratePasswordResetTokenAsync(user);
-        string confirmationToken = HttpUtility.UrlEncode($"{token}&{user.Email}");
-        string confirmationLink = $"{_appData.CLIENT_APP_URL}/reset-password/{confirmationToken}";
-
-        bool emailResponse = _emailHelper.SendEmailPasswordReset(user.Email, confirmationLink);
-        if (emailResponse)
+        var logins = await userManager.GetLoginsAsync(user);
+        if (logins.Any())
         {
-            return Ok(new Response<string>("Check your email to reset password"));
+            return new JsonResult(new Response<StatusCodeResult>(new StatusCodeResult(400), $"You can login via {logins[0].LoginProvider}.No need to reset password."));
         }
         else
         {
-            return new JsonResult(new Response<StatusCodeResult>(new StatusCodeResult(500), "Password reset was failed, Try again."));
+            var token = await userManager.GeneratePasswordResetTokenAsync(user);
+            string confirmationToken = HttpUtility.UrlEncode($"{token}&{user.Email}");
+            string confirmationLink = $"{_appData.CLIENT_APP_URL}/reset-password/{confirmationToken}";
+
+            bool emailResponse = _emailHelper.SendEmailPasswordReset(user.Email, confirmationLink);
+            if (emailResponse)
+            {
+                return Ok(new Response<string>("Check your email to reset password"));
+            }
+            else
+            {
+                return new JsonResult(new Response<StatusCodeResult>(new StatusCodeResult(500), "Password reset was failed, Try again."));
+            }
         }
+        
     }
     [HttpPost]
     [Route("ResetPassword")]
@@ -199,58 +188,9 @@ public class AuthController : ControllerBase
             return new JsonResult(new Response<StatusCodeResult>(new StatusCodeResult(500), "Password Reset was failed.Try again."));
         }
     }
-    [HttpPost]
-    [Route("login-admin")]
-    public async Task<IActionResult> AdminLogin([FromBody] LoginDto model)
-    {
-        var user = await userManager.FindByEmailAsync(model.Email);
-        if (user != null && await userManager.CheckPasswordAsync(user, model.Password))
-        {
-            bool emailStatus = await userManager.IsEmailConfirmedAsync(user);
-            if (!emailStatus)
-                return new JsonResult(new Response<StatusCodeResult>(new StatusCodeResult(500), "Email is unconfirmed, please confirm it first."));
-
-            var userRoles = await userManager.GetRolesAsync(user);
-
-            if (userRoles.Contains(UserRoles.Administrator))
-            {
-                var authClaims = new List<Claim>
-                    {
-                        new Claim(ClaimTypes.Email, user.Email),
-                        new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString()),
-                    };
-
-                foreach (var userRole in userRoles)
-                {
-                    authClaims.Add(new Claim(ClaimTypes.Role, userRole));
-                }
-
-                var authSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_configuration["JWT:Secret"]));
-
-                var token = new JwtSecurityToken(
-                    issuer: _configuration["JWT:ValidIssuer"],
-                    audience: _configuration["JWT:ValidAudience"],
-                    expires: DateTime.Now.AddHours(3),
-                    claims: authClaims,
-                    signingCredentials: new SigningCredentials(authSigningKey, SecurityAlgorithms.HmacSha256)
-                    );
-
-                return Ok(new Response<object>(new
-                {
-                    token = new JwtSecurityTokenHandler().WriteToken(token),
-                    expiration = token.ValidTo
-                }));
-            }
-            else
-            {
-                return new JsonResult(new Response<StatusCodeResult>(new StatusCodeResult(401), "Email and Password does not match"));
-            }
-        }
-        return new JsonResult(new Response<StatusCodeResult>(new StatusCodeResult(401), "Email and Password does not match"));
-    }
 
     [HttpPost]
-    [Route("register-admin")]
+    [Route("RegisterAdmin")]
     public async Task<IActionResult> RegisterAdmin([FromBody] AdminRegisterDto model)
     {
         var userExists = await userManager.FindByEmailAsync(model.Email);
@@ -270,15 +210,7 @@ public class AuthController : ControllerBase
         if (!result.Succeeded)
             return new JsonResult(new Response<StatusCodeResult>(new StatusCodeResult(500), "User creation failed! Please check user details and try again."));
 
-        if (!await roleManager.RoleExistsAsync(UserRoles.Administrator))
-            await roleManager.CreateAsync(new IdentityRole(UserRoles.Administrator));
-        if (!await roleManager.RoleExistsAsync(UserRoles.Administrator))
-            await roleManager.CreateAsync(new IdentityRole(UserRoles.Administrator));
-
-        if (await roleManager.RoleExistsAsync(UserRoles.Administrator))
-        {
-            await userManager.AddToRoleAsync(user, UserRoles.Administrator);
-        }
+        await userManager.AddToRoleAsync(user, UserRoles.Administrator);
 
         var dbUser = await userManager.FindByEmailAsync(model.Email);
         if (dbUser == null)
@@ -347,4 +279,6 @@ public class AuthController : ControllerBase
 
         return new string(chars.ToArray());
     }
+
+    
 }
